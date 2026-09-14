@@ -5,21 +5,126 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>The Bar Observer — Madrid</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f7f5ef}header{padding:18px 22px;background:#fff;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:baseline;gap:12px}h1{margin:0;font-size:22px;letter-spacing:-.02em}.sub{color:#6b7280;font-size:13px}#map{height:calc(100vh - 67px);min-height:520px}.popup h3{margin:0 0 7px;font-size:16px}.popup .price{font-size:24px;font-weight:750;margin:3px 0 8px}.popup table{border-collapse:collapse;font-size:13px}.popup td{padding:2px 8px 2px 0}.popup td:first-child{color:#6b7280}#status{position:absolute;z-index:1000;top:82px;left:12px;background:#fff;padding:8px 11px;border:1px solid #ddd;border-radius:8px;font-size:12px;box-shadow:0 1px 4px #0001}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f5f6f8}
+#map{height:100%;width:100%}
+.header{position:absolute;z-index:1000;top:18px;left:18px;background:rgba(255,255,255,.94);padding:12px 16px;border-radius:12px;box-shadow:0 3px 15px rgba(0,0,0,.12);backdrop-filter:blur(8px)}
+h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.sub{margin-top:5px;color:#6b7280;font-size:12px}
+#status{position:absolute;z-index:1000;bottom:18px;left:18px;background:rgba(255,255,255,.94);padding:8px 12px;border-radius:9px;box-shadow:0 2px 10px rgba(0,0,0,.12);font-size:12px;color:#374151;backdrop-filter:blur(8px)}
+
+.leaflet-marker-icon.bar-price-icon{background:transparent;border:0}
+.bar-marker-wrap{position:relative;width:92px;height:64px;--dx:0px}
+.bar-price{position:absolute;left:50%;top:0;transform:translateX(calc(-50% + var(--dx)));background:#fff;color:#1f2937;border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:12px;font-weight:750;line-height:1;white-space:nowrap;box-shadow:0 2px 7px rgba(15,23,42,.16);transition:transform .12s ease}
+.bar-price::after{content:"";position:absolute;left:50%;bottom:-8px;width:1px;height:8px;background:#cbd5e1;transform:translateX(-50%)}
+.bar-dot{position:absolute;left:50%;top:37px;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#243b8f;border:3px solid #fff;box-shadow:0 0 0 5px rgba(36,59,143,.18),0 2px 5px rgba(15,23,42,.25)}
+
+.bar-cluster{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(36,59,143,.88);border:7px solid rgba(36,59,143,.18);background-clip:padding-box;color:#fff;font-size:15px;font-weight:800;box-shadow:0 2px 8px rgba(15,23,42,.18)}
+.marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background:transparent}
+
+.leaflet-popup-content-wrapper{border-radius:10px}.leaflet-popup-content{margin:12px 14px}.popup h3{margin:0 0 5px;font-size:17px;color:#111827}.popup .price{font-size:24px;font-weight:800;color:#243b8f;margin-bottom:10px}.popup table{border-collapse:collapse;font-size:13px}.popup td{padding:3px 0}.popup td:first-child{color:#6b7280;padding-right:15px}.popup td:last-child{color:#111827;font-weight:600}.popup a{display:inline-block;margin-top:10px;color:#243b8f;text-decoration:none;font-weight:700}
 </style>
 </head>
 <body>
-<header><h1>The Bar Observer</h1><div class="sub">Madrid · última medición por bar</div></header>
-<div id="status">Cargando bares…</div><div id="map"></div>
+<div class="header"><h1>The Bar Observer</h1><div class="sub">Buenos bares. Mejores datos.</div></div>
+<div id="map"></div>
+<div id="status">Cargando datos…</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
-const map=L.map('map').setView([40.4168,-3.7038],12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+const map=L.map('map',{maxZoom:18,zoomAnimation:true}).setView([40.4168,-3.7038],12);
+L.maplibreGL({style:'https://tiles.openfreemap.org/styles/positron',maxZoom:18}).addTo(map);
 const status=document.getElementById('status');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function popup(b){return `<div class="popup"><h3>${esc(b.bar)}</h3><div class="price">${b.price_eur.toFixed(2).replace('.',',')} €</div><table><tr><td>Bebida</td><td>${esc(b.brand||b.drink_type)}</td></tr><tr><td>Formato</td><td>${esc(b.format)} · ${esc(b.ml)} ml</td></tr><tr><td>Tapa</td><td>${esc(b.tapa)}</td></tr><tr><td>Precio/L</td><td>${esc(b.price_per_l)}</td></tr><tr><td>Medición</td><td>${esc(b.date)}</td></tr></table></div>`;}
-(async()=>{try{const bars=await fetch('bars.json').then(r=>{if(!r.ok)throw new Error('bars.json');return r.json();});const bounds=[];for(const b of bars){const ll=[Number(b.lat),Number(b.lon)];if(!Number.isFinite(ll[0])||!Number.isFinite(ll[1]))continue;L.marker(ll).addTo(map).bindPopup(popup(b));bounds.push(ll);}if(bounds.length)map.fitBounds(bounds,{padding:[30,30]});status.textContent=`${bounds.length} bares · última medición`;setTimeout(()=>status.remove(),2500);}catch(e){console.error(e);status.textContent='No se pudieron cargar los datos';}})();
+
+function popup(b){
+ const price=Number(b.price_eur);
+ return `<div class="popup"><h3>${esc(b.bar)}</h3><div class="price">${price.toFixed(2).replace('.',',')} €</div><table>
+ <tr><td>Bebida</td><td>${esc(b.brand||b.drink_type)}</td></tr>
+ <tr><td>Formato</td><td>${esc(b.format)} · ${esc(b.ml)} ml</td></tr>
+ <tr><td>Tapa</td><td>${esc(b.tapa)}</td></tr>
+ <tr><td>Precio/L</td><td>${esc(b.price_per_l)}</td></tr>
+ <tr><td>Medición</td><td>${esc(b.date)}</td></tr></table>
+ ${b.google_maps_url?`<a href="${esc(b.google_maps_url)}" target="_blank" rel="noopener">📍 Ver en Google Maps</a>`:''}</div>`;
+}
+
+function barIcon(b){
+ const price=Number(b.price_eur);
+ return L.divIcon({className:'bar-price-icon',html:`<div class="bar-marker-wrap" data-marker="bar"><div class="bar-price">${price.toFixed(2).replace('.',',')} €</div><div class="bar-dot"></div></div>`,iconSize:[92,64],iconAnchor:[46,47],popupAnchor:[0,-47]});
+}
+
+const barsLayer=L.markerClusterGroup({
+ maxClusterRadius:55,
+ disableClusteringAtZoom:15,
+ showCoverageOnHover:false,
+ spiderfyOnMaxZoom:true,
+ zoomToBoundsOnClick:true,
+ animate:true,
+ animateAddingMarkers:false,
+ iconCreateFunction:cluster=>L.divIcon({html:`<div class="bar-cluster">${cluster.getChildCount()}</div>`,className:'bar-cluster-icon',iconSize:[46,46],iconAnchor:[23,23]})
+});
+
+const markerRecords=[];
+
+// Spread only the PRICE LABELS when two nearby bars would overlap on screen.
+// The dots remain on their real geographic positions.
+function layoutPriceLabels(){
+ const zoom=map.getZoom();
+ if(zoom<15) return;
+ const placed=[];
+ const minGap=52;
+ const maxShift=46;
+ for(const rec of markerRecords){
+   if(!map.hasLayer(rec.marker)) continue;
+   const p=map.latLngToLayerPoint(rec.marker.getLatLng());
+   let dx=0;
+   let tries=0;
+   while(tries<8){
+     const candidateX=p.x+dx;
+     let collision=false;
+     for(const other of placed){
+       if(Math.abs(candidateX-other.x)<minGap && Math.abs(p.y-other.y)<26){collision=true;break;}
+     }
+     if(!collision) break;
+     dx += (tries%2===0 ? 1 : -1) * Math.ceil((tries+1)/2)*18;
+     if(Math.abs(dx)>maxShift){dx=0;break;}
+     tries++;
+   }
+   placed.push({x:p.x+dx,y:p.y});
+   const el=rec.marker.getElement();
+   if(el){const wrap=el.querySelector('.bar-marker-wrap');if(wrap)wrap.style.setProperty('--dx',dx+'px');}
+ }
+}
+
+map.on('zoomend moveend',layoutPriceLabels);
+
+(async()=>{
+ try{
+  const response=await fetch('bars.json');
+  if(!response.ok)throw new Error(`bars.json respondió ${response.status}`);
+  const bars=await response.json();
+  const bounds=[];
+  for(const b of bars){
+   const lat=Number(b.lat),lon=Number(b.lon);
+   if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+   const marker=L.marker([lat,lon],{icon:barIcon(b)}).bindPopup(popup(b));
+   markerRecords.push({marker,b});
+   barsLayer.addLayer(marker);
+   bounds.push([lat,lon]);
+  }
+  map.addLayer(barsLayer);
+  if(bounds.length)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});
+  status.textContent=`${bounds.length} bares · observaciones`;
+  setTimeout(()=>status.remove(),2500);
+  setTimeout(layoutPriceLabels,150);
+ }catch(e){console.error('ERROR CARGANDO LOS DATOS:',e);status.textContent='No se pudieron cargar los datos';}
+})();
 </script>
 </body>
 </html>
