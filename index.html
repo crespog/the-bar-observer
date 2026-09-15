@@ -29,7 +29,7 @@ h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.
 </style>
 </head>
 <body>
-<div class="header"><h1>The Bar Observer</h1><div class="sub">Buenos bares. Mejores datos.</div></div>
+<div class="header"><h1>The Bar Observer</h1></div>
 <div id="map"></div>
 <div id="status">Cargando datos…</div>
 
@@ -38,7 +38,8 @@ h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
-const map=L.map('map',{maxZoom:18,zoomAnimation:true}).setView([40.4168,-3.7038],12);
+const madridBounds=L.latLngBounds([40.30,-3.90],[40.56,-3.50]);
+const map=L.map('map',{maxZoom:18,minZoom:11,maxBounds:madridBounds,maxBoundsViscosity:1,zoomAnimation:true,worldCopyJump:false}).setView([40.4168,-3.7038],12);
 L.maplibreGL({style:'https://tiles.openfreemap.org/styles/positron',maxZoom:18}).addTo(map);
 const status=document.getElementById('status');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -60,8 +61,8 @@ function barIcon(b){
 }
 
 const barsLayer=L.markerClusterGroup({
- maxClusterRadius:55,
- disableClusteringAtZoom:15,
+ maxClusterRadius:45,
+ disableClusteringAtZoom:17,
  showCoverageOnHover:false,
  spiderfyOnMaxZoom:true,
  zoomToBoundsOnClick:true,
@@ -120,6 +121,7 @@ map.on('zoomend moveend',layoutPriceLabels);
   }
   map.addLayer(barsLayer);
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});
+  map.setMaxBounds(madridBounds);
   status.textContent=`${bounds.length} bares · observaciones`;
   setTimeout(()=>status.remove(),2500);
   setTimeout(layoutPriceLabels,150);
