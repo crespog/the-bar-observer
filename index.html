@@ -12,8 +12,8 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f5f6f8}
 #map{height:100%;width:100%}
-.header{position:absolute;z-index:1000;top:18px;left:18px;background:rgba(255,255,255,.94);padding:12px 16px;border-radius:12px;box-shadow:0 3px 15px rgba(0,0,0,.12);backdrop-filter:blur(8px)}
-h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.sub{margin-top:5px;color:#6b7280;font-size:12px}
+.header,.filters{position:absolute;z-index:1000;background:rgba(255,255,255,.94);padding:12px 16px;border-radius:12px;box-shadow:0 3px 15px rgba(0,0,0,.12);backdrop-filter:blur(8px)}.header{top:18px;left:18px}
+h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.filters{top:18px;right:18px;display:flex;align-items:center;gap:9px}.filter-label{color:#4b5563;font-size:12px;font-weight:750}.filter-options{display:flex;gap:5px}.filter-chip{border:1px solid #d1d5db;border-radius:7px;background:#fff;color:#4b5563;padding:5px 9px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,color .15s,border-color .15s}.filter-chip:hover{border-color:#243b8f;color:#243b8f}.filter-chip[aria-pressed="true"]{background:#243b8f;border-color:#243b8f;color:#fff}@media(max-width:620px){.filters{top:64px;left:18px;right:auto}}
 #status{position:absolute;z-index:1000;bottom:18px;left:18px;background:rgba(255,255,255,.94);padding:8px 12px;border-radius:9px;box-shadow:0 2px 10px rgba(0,0,0,.12);font-size:12px;color:#374151;backdrop-filter:blur(8px)}
 
 .leaflet-marker-icon.bar-price-icon{background:transparent;border:0}
@@ -30,6 +30,7 @@ h1{margin:0;font-size:19px;line-height:1;font-weight:800;letter-spacing:-.02em}.
 </head>
 <body>
 <div class="header"><h1>The Bar Observer</h1></div>
+<div class="filters" role="group" aria-label="Filtrar por formato"><span class="filter-label">Formato</span><div class="filter-options"><button class="filter-chip" type="button" data-format="Caña" aria-pressed="false">Caña</button><button class="filter-chip" type="button" data-format="Doble" aria-pressed="false">Doble</button><button class="filter-chip" type="button" data-format="Tercio" aria-pressed="true">Tercio</button></div></div>
 <div id="map"></div>
 <div id="status">Cargando datos…</div>
 
@@ -45,6 +46,8 @@ const status=document.getElementById('status');
 // La hoja de cálculo permanece privada. Este endpoint solo publica los campos
 // que necesita el mapa, filtrados por el Apps Script de The Bar Observer.
 const DATA_ENDPOINT='https://script.google.com/macros/s/AKfycbxtTM_1L7SJLGSbkTMhhudrxvqrP4xlnmrdJa94xQqKa-ZsEYEW6pgNf-Re7VlWa_7o/exec';
+const formatButtons=[...document.querySelectorAll('[data-format]')];
+let selectedFormats=formatButtons.filter(button=>button.getAttribute('aria-pressed')==='true').map(button=>button.dataset.format);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 async function loadBars(){
@@ -62,6 +65,24 @@ async function loadBars(){
    if(!response.ok)throw new Error(`bars.json respondió ${response.status}`);
    return {bars:await response.json(),source:'copia local'};
  }
+}
+
+function normalized(value){
+ return String(value??'').trim().toLocaleLowerCase('es-ES');
+}
+
+// Un bar aparece una sola vez: la medición más barata de los formatos seleccionados.
+function visibleBars(records,formats=selectedFormats){
+ const selected=new Set(formats.map(normalized));
+ const cheapestByBar=new Map();
+ for(const bar of records){
+   const price=Number(bar.price_eur);
+   if(!selected.has(normalized(bar.format))||!Number.isFinite(price))continue;
+   const key=normalized(bar.bar)||`${bar.lat},${bar.lon}`;
+   const current=cheapestByBar.get(key);
+   if(!current||price<Number(current.price_eur))cheapestByBar.set(key,bar);
+ }
+ return [...cheapestByBar.values()];
 }
 
 function popup(b){
@@ -88,7 +109,10 @@ const barsLayer=L.markerClusterGroup({
  zoomToBoundsOnClick:true,
  animate:true,
  animateAddingMarkers:false,
- iconCreateFunction:cluster=>L.divIcon({html:`<div class="bar-cluster">${cluster.getChildCount()}</div>`,className:'bar-cluster-icon',iconSize:[46,46],iconAnchor:[23,23]})
+ iconCreateFunction:cluster=>{
+   const barCount=new Set(cluster.getAllChildMarkers().map(marker=>marker.barObserverKey)).size;
+   return L.divIcon({html:`<div class="bar-cluster">${barCount}</div>`,className:'bar-cluster-icon',iconSize:[46,46],iconAnchor:[23,23]});
+ }
 });
 
 const markerRecords=[];
@@ -125,24 +149,44 @@ function layoutPriceLabels(){
 
 map.on('zoomend moveend',layoutPriceLabels);
 
-(async()=>{
- try{
-  const {bars,source}=await loadBars();
-  const bounds=[];
-  for(const b of bars){
+let allBars=[];
+let dataSource='';
+
+function renderBars({fitMap=false}={}){
+ const bars=visibleBars(allBars);
+ const bounds=[];
+ barsLayer.clearLayers();
+ markerRecords.length=0;
+ for(const b of bars){
    const lat=Number(b.lat),lon=Number(b.lon);
    if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
    const marker=L.marker([lat,lon],{icon:barIcon(b)}).bindPopup(popup(b));
+   marker.barObserverKey=String(b.bar??'').trim().toLocaleLowerCase('es-ES')||`${lat},${lon}`;
    markerRecords.push({marker,b});
    barsLayer.addLayer(marker);
    bounds.push([lat,lon]);
-  }
-  map.addLayer(barsLayer);
-  if(bounds.length)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});
+ }
+ if(!map.hasLayer(barsLayer))map.addLayer(barsLayer);
+ if(fitMap&&bounds.length)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});
+ status.textContent=`${bounds.length} bares · ${selectedFormats.join(', ')||'ningún formato'} · ${dataSource}`;
+ setTimeout(layoutPriceLabels,150);
+}
+
+formatButtons.forEach(button=>button.addEventListener('click',()=>{
+ const active=button.getAttribute('aria-pressed')==='true';
+ button.setAttribute('aria-pressed',String(!active));
+ selectedFormats=formatButtons.filter(item=>item.getAttribute('aria-pressed')==='true').map(item=>item.dataset.format);
+ if(allBars.length)renderBars();
+}));
+
+(async()=>{
+ try{
+  const loaded=await loadBars();
+  allBars=loaded.bars;
+  dataSource=loaded.source;
   map.setMaxBounds(madridBounds);
-  status.textContent=`${bounds.length} bares · ${source}`;
+  renderBars({fitMap:true});
   setTimeout(()=>status.remove(),2500);
-  setTimeout(layoutPriceLabels,150);
  }catch(e){console.error('ERROR CARGANDO LOS DATOS:',e);status.textContent='No se pudieron cargar los datos';}
 })();
 </script>
