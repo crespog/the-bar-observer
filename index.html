@@ -42,7 +42,27 @@ const madridBounds=L.latLngBounds([40.30,-3.90],[40.56,-3.50]);
 const map=L.map('map',{maxZoom:18,minZoom:11,maxBounds:madridBounds,maxBoundsViscosity:1,zoomAnimation:true,worldCopyJump:false}).setView([40.4168,-3.7038],12);
 L.maplibreGL({style:'https://tiles.openfreemap.org/styles/positron',maxZoom:18}).addTo(map);
 const status=document.getElementById('status');
+// La hoja de cálculo permanece privada. Este endpoint solo publica los campos
+// que necesita el mapa, filtrados por el Apps Script de The Bar Observer.
+const DATA_ENDPOINT='https://script.google.com/macros/s/AKfycbxtTM_1L7SJLGSbkTMhhudrxvqrP4xlnmrdJa94xQqKa-ZsEYEW6pgNf-Re7VlWa_7o/exec';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function loadBars(){
+ try{
+   // El parámetro evita reutilizar una respuesta antigua almacenada en caché.
+   const response=await fetch(`${DATA_ENDPOINT}?v=${Date.now()}`,{cache:'no-store'});
+   if(!response.ok)throw new Error(`El endpoint respondió ${response.status}`);
+   const bars=await response.json();
+   if(!Array.isArray(bars))throw new Error('El endpoint no devolvió una lista de bares');
+   return {bars,source:'Google Sheets'};
+ }catch(remoteError){
+   // El archivo incluido permite que el mapa siga disponible si Google no responde.
+   console.warn('No se pudieron cargar los datos remotos; se usa la copia local.',remoteError);
+   const response=await fetch('bars.json',{cache:'no-store'});
+   if(!response.ok)throw new Error(`bars.json respondió ${response.status}`);
+   return {bars:await response.json(),source:'copia local'};
+ }
+}
 
 function popup(b){
  const price=Number(b.price_eur);
@@ -107,9 +127,7 @@ map.on('zoomend moveend',layoutPriceLabels);
 
 (async()=>{
  try{
-  const response=await fetch('bars.json');
-  if(!response.ok)throw new Error(`bars.json respondió ${response.status}`);
-  const bars=await response.json();
+  const {bars,source}=await loadBars();
   const bounds=[];
   for(const b of bars){
    const lat=Number(b.lat),lon=Number(b.lon);
@@ -122,7 +140,7 @@ map.on('zoomend moveend',layoutPriceLabels);
   map.addLayer(barsLayer);
   if(bounds.length)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});
   map.setMaxBounds(madridBounds);
-  status.textContent=`${bounds.length} bares · observaciones`;
+  status.textContent=`${bounds.length} bares · ${source}`;
   setTimeout(()=>status.remove(),2500);
   setTimeout(layoutPriceLabels,150);
  }catch(e){console.error('ERROR CARGANDO LOS DATOS:',e);status.textContent='No se pudieron cargar los datos';}
